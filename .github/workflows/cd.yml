@@ -1,0 +1,148 @@
+# Delivery pipeline.
+#   push to main  -> CI -> images tagged main + sha-<short> -> deploy to staging
+#   tag v1.2.3    -> CI -> images tagged 1.2.3, 1.2, latest -> deploy to production
+#
+# Images go to GitHub Container Registry (ghcr.io/<owner>/gradehub-backend and
+# gradehub-frontend). Deploy jobs run only when the repository variable
+# DEPLOY_ENABLED is "true"; setup is described in docs/deployment.md.
+name: CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never run two deploys to the same place at once; queue them instead.
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish ${{ matrix.service }} image
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Image name
+        id: image
+        # Registry paths must be lowercase.
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/gradehub-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          flavor: |
+            latest=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: publish
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+      url: ${{ vars.APP_URL }}
+    steps:
+      - name: Short SHA
+        id: sha
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Pull and restart on the server
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ vars.DEPLOY_SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd "${{ vars.DEPLOY_PATH }}"
+            export IMAGE_TAG="${{ steps.sha.outputs.tag }}"
+            docker compose pull backend frontend
+            docker compose up -d --wait
+            docker image prune -f
+
+      - name: Smoke test
+        run: |
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "${{ vars.APP_URL }}/healthz"
+          # The API answers through nginx: 401 without a token is the expected reply.
+          test "$(curl -s -o /dev/null -w '%{http_code}' "${{ vars.APP_URL }}/api/auth/me")" = "401"
+
+  deploy-production:
+    name: Deploy to production
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v') && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Add required reviewers to this environment so a release waits for approval.
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
+    steps:
+      - name: Version
+        id: version
+        # v1.2.3 -> 1.2.3, the tag metadata-action gave the images.
+        run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Pull and restart on the server
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ vars.DEPLOY_SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd "${{ vars.DEPLOY_PATH }}"
+            export IMAGE_TAG="${{ steps.version.outputs.tag }}"
+            docker compose pull backend frontend
+            docker compose up -d --wait
+            docker image prune -f
+
+      - name: Smoke test
+        run: |
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "${{ vars.APP_URL }}/healthz"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "${{ vars.APP_URL }}/api/auth/me")" = "401"

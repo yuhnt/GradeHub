@@ -1,139 +1,99 @@
 # Task Grading Hub
 
-Teachers post tasks with deadlines; students submit PDFs before the deadline;
-teachers grade submissions. Built with Express, TypeScript, PostgreSQL (via
-Prisma), JWT auth, and multer for file uploads.
+[![CI](https://github.com/yuhnt/GradeHub/actions/workflows/ci.yml/badge.svg)](https://github.com/yuhnt/GradeHub/actions/workflows/ci.yml)
+[![CD](https://github.com/yuhnt/GradeHub/actions/workflows/cd.yml/badge.svg?branch=main)](https://github.com/yuhnt/GradeHub/actions/workflows/cd.yml)
+
+Teachers post tasks with deadlines, students hand in a PDF before the
+deadline, and teachers grade each submission with feedback.
+
+- **Students** register, see what is due and where they stand, upload one PDF
+  per task (and replace it until the deadline), and read their grades and
+  feedback.
+- **Teachers** create, edit and delete tasks, try them with test uploads,
+  read each PDF next to a grading form, re-grade at any time and export
+  grades as CSV.
 
 ## Stack
-- TypeScript
-- Express
-- PostgreSQL + Prisma
-- JWT (jsonwebtoken) + bcrypt
-- multer (PDF uploads)
-- zod (validation)
-- Jest + supertest (testing)
 
-## Setup
+| Part | Technology |
+|---|---|
+| Web client | React 19, TypeScript, Vite, React Router, TanStack Query, React Hook Form + zod, Tailwind CSS |
+| API | Node.js 22, Express, TypeScript, Prisma, PostgreSQL 16, JWT + bcrypt, multer, Nodemailer |
+| Tests | Vitest + Testing Library + MSW (web), Jest + supertest against a real database (API) |
+| Delivery | Docker (nginx + Node images), Docker Compose, GitHub Actions, GitHub Container Registry |
 
-1. Install dependencies:
-   ```
-   npm install
-   ```
-
-2. Copy `.env.example` to `.env` and fill in real values (at least
-   `DATABASE_URL` and `JWT_SECRET`):
-   ```
-   cp .env.example .env
-   ```
-
-3. Start Postgres (and pgAdmin on http://localhost:5050):
-   ```
-   docker compose up -d
-   ```
-
-4. Apply the migrations. The second migration is hand-written: it adds the
-   partial unique index on `submissions` that Prisma can't express. Read
-   `prisma/PARTIAL_INDEX_NOTE.md` before creating new migrations with
-   `migrate dev`.
-   ```
-   npx prisma migrate deploy
-   ```
-
-5. (Optional) Password reset emails are sent over SMTP with Nodemailer.
-   With no `SMTP_HOST`, reset tokens are just printed to the server console.
-   - Fake inbox for development, no signup: `SMTP_HOST="ethereal"`. The
-     console prints a link to view each email.
-   - Real emails via Gmail: turn on 2-Step Verification, create an App
-     Password at https://myaccount.google.com/apppasswords, then set
-     `SMTP_HOST="smtp.gmail.com"`, `SMTP_PORT=587`, `SMTP_USER` (your
-     Gmail address), `SMTP_PASS` (the App Password) and `MAIL_FROM`.
-   - Set `RESET_PASSWORD_URL` if you have a frontend reset page; the email
-     then contains a link instead of the raw token.
-
-6. Create a teacher account. Public registration only creates students
-   (decision 4 below):
-   ```
-   npm run seed:teacher -- --username=drhossam --email=hossam@example.com --password=SecurePass123
-   ```
-
-7. Start the dev server:
-   ```
-   npm run dev
-   ```
-   Or build and run the compiled version:
-   ```
-   npm run build && npm start
-   ```
-
-## Tests
-
-The tests are integration tests against a real Postgres database. They load
-`.env.test` when it exists, so they never touch the dev database. Set it up
-once:
+## Repository layout
 
 ```
-docker exec taskgrade_postgres psql -U <DB_USER> -d postgres -c "CREATE DATABASE taskgrade_test"
+backend/      REST API, database schema and migrations, seed script  → backend/README.md
+frontend/     Web client and its nginx configuration                  → frontend/README.md
+docs/         Requirements, API reference, architecture, deployment, user guide
+.github/      CI/CD workflows, Dependabot, pull request template
+docker-compose.yml   The whole application (db + api + web) for servers and demos
 ```
 
-Next, create `.env.test`: copy `.env`, point `DATABASE_URL` at
-`taskgrade_test`, and set `UPLOAD_DIR="uploads-test"`. Then apply the
-migrations to the test database:
+## Try it with Docker
 
-```
-set -a; . ./.env.test; set +a; npx prisma migrate deploy   # bash; loads .env.test into the shell first
-```
+Needs Docker with Compose.
 
-Run the suite. Tests run serially (`--runInBand`) because they share one
-database, and the test upload directory is deleted when they finish:
-
-```
-npm test
+```bash
+cp .env.example .env
+# Fill in DB_PASSWORD (openssl rand -hex 24) and JWT_SECRET (openssl rand -base64 48)
+docker compose up -d --build --wait
+docker compose exec backend node dist/scripts/seed-teacher.js \
+  --username=teacher1 --email=teacher1@example.com --password=ChangeMe123
 ```
 
-## API
+Open http://localhost:8080, sign in as `teacher1`, and register a student
+account in another browser (or a private window) to try both sides.
 
-All routes except `/api/auth/*` need `Authorization: Bearer <token>`.
-Errors always look like `{ "error": "<message>" }`.
+## Develop
 
-| Method | Path | Who | Notes |
-|---|---|---|---|
-| POST | `/api/auth/register` | public | always creates a student |
-| POST | `/api/auth/login` | public | returns `{ token }` |
-| POST | `/api/auth/logout` | any | client-side only (decision 3) |
-| POST | `/api/auth/forgot-password` | public | emails a reset token over SMTP; same response whether or not the email exists |
-| POST | `/api/auth/reset-password` | public | single-use token |
-| POST | `/api/tasks` | teacher | `{ title, description, deadline }`, deadline must be in the future |
-| GET | `/api/tasks?page=1&limit=20` | any | `{ tasks, page, limit, total, totalPages }`; limit is 1-100, default 20 |
-| GET | `/api/tasks/:id` | any | |
-| PUT | `/api/tasks/:id` | owning teacher | full replace; other teachers get 403 |
-| DELETE | `/api/tasks/:id` | owning teacher | cascades to submissions, grades and their PDFs |
-| GET | `/api/tasks/:id/submissions` | owning teacher | leaves out test submissions; other teachers get 404 |
-| POST | `/api/tasks/:id/test-submission` | owning teacher | multipart `file`; no deadline or count limit |
-| POST | `/api/submissions` | student | multipart `taskId` + `file` (PDF, 10MB max) |
-| GET | `/api/submissions/:id` | owner student / owning teacher | everyone else gets 404 |
-| GET | `/api/submissions/:id/file` | owner student / owning teacher | downloads the PDF |
-| DELETE | `/api/submissions/:id` | owner student | only before the deadline |
-| PATCH | `/api/submissions/:id/grade` | owning teacher | `{ grade: 0-100 integer, feedback? }`, can be repeated to re-grade |
-| GET | `/api/submissions/:id/grade` | owner student / owning teacher | `graded: false` until graded |
+Needs Node.js 22 (see [`.nvmrc`](.nvmrc)) and Docker for the database.
 
-Status codes follow the user stories:
-- 400: bad input, or a missed deadline
-- 401: no token or a bad token
-- 403: wrong role, or editing/deleting another teacher's task
-- 404: missing, or hidden because it belongs to someone else
-- 409: duplicate submission
+```bash
+# 1. Database (PostgreSQL on localhost:5433, pgAdmin on localhost:5050)
+cd backend
+cp .env.example .env            # set DB_PASSWORD, DATABASE_URL, JWT_SECRET
+docker compose up -d
+npm install
+npx prisma migrate deploy
+npm run seed:teacher -- --username=teacher1 --email=teacher1@example.com --password=ChangeMe123
 
-## Decisions locked in
+# 2. API on http://localhost:3000
+npm run dev
 
-1. **Task deletion cascades.** Deleting a task deletes its submissions,
-   their grades, and the uploaded PDFs. This is intentional, not a bug.
-2. **Re-grading is allowed.** `PATCH .../grade` overwrites `grade`,
-   `feedback` and `gradedAt` every time.
-3. **Logout is client-side.** The client discards the token. JWTs are
-   stateless and there's no blacklist.
-4. **Teachers are created by `scripts/seed-teacher.ts` only.** `/register`
-   ignores any `role` field.
-5. **Deadlines are freely editable.** A new deadline applies to future
-   submit/delete requests. Late submissions are rejected, never stored.
-6. **Test submissions are unrestricted.** The one-submission-per-task rule
-   applies only to `isTest = false` rows (a partial unique index).
+# 3. Web client on http://localhost:5173 (another terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+The Vite dev server forwards `/api` to the API, so no CORS setup is needed.
+Set `RESET_PASSWORD_URL=http://localhost:5173/reset-password` in
+`backend/.env` to get clickable reset links.
+
+## Test
+
+```bash
+cd backend && npm test           # 79 integration tests, needs the test database (backend/README.md#tests)
+cd frontend && npm test          # 60 component and unit tests, no setup needed
+cd frontend && npm run lint && npm run typecheck
+```
+
+CI runs all of this, plus dependency audits and Docker builds, on every pull
+request. Merges to `main` deploy to staging; tags `vX.Y.Z` deploy to
+production. See [docs/deployment.md](docs/deployment.md).
+
+## Documentation
+
+| Document | For |
+|---|---|
+| [Frontend requirements](docs/frontend-requirements.md) | What the web client does and why; acceptance criteria; open questions |
+| [API reference](docs/api.md) | Every endpoint, body, response and error |
+| [Architecture](docs/architecture.md) | Components, data model, session handling, technical decisions |
+| [Deployment and operations](docs/deployment.md) | Pipeline, server setup, releases, rollback, backups |
+| [User guide](docs/user-guide.md) | Students and teachers using the site |
+| [Backend README](backend/README.md) | API setup, configuration, product decisions |
+| [Frontend README](frontend/README.md) | Web client setup and conventions |
+| [Changelog](CHANGELOG.md) | What changed in each release |
