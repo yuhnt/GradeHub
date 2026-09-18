@@ -3,7 +3,7 @@
 # Task Grading Hub API. Build from the backend/ directory:
 #   docker build -t gradehub-backend .
 
-FROM node:22-bookworm-slim AS base
+FROM node:26-bookworm-slim AS base
 WORKDIR /app
 # Prisma's engines need OpenSSL at build and run time.
 RUN apt-get update \
