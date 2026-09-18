@@ -137,24 +137,3 @@ Status codes follow the user stories:
    submit/delete requests. Late submissions are rejected, never stored.
 6. **Test submissions are unrestricted.** The one-submission-per-task rule
    applies only to `isTest = false` rows (a partial unique index).
-
-## Project layout
-
-```
-src/
-  routes/         Express route definitions, grouped by resource
-  controllers/    Thin HTTP layer: parses req, calls a service, sends res
-  services/       Business logic (deadline checks, ownership rules, etc.)
-  repositories/   Prisma queries only - no business logic
-  validators/     zod schemas for request bodies
-  middleware/     auth, error handling, multer, validation
-  config/         env loading, Prisma client singleton
-  utils/          JWT, passwords/reset tokens, id parsing, response DTOs, file cleanup
-  server.ts       Entry point (index.ts re-exports it for `npm run dev`)
-scripts/
-  seed-teacher.ts Creates a teacher account out-of-band
-prisma/
-  schema.prisma, migrations/, PARTIAL_INDEX_NOTE.md
-tests/            Jest + supertest integration tests (auth, task, submission, grade)
-```
-
