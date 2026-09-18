@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+  url      = env("DATABASE_URL")
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  student
+  teacher
+}
+
+model User {
+  id           BigInt          @id @default(autoincrement())
+  username     String          @unique @db.VarChar(255)
+  email        String          @unique @db.VarChar(255)
+  hashPassword String          @map("hash_password") @db.VarChar(255)
+  role         Role
+  createdAt    DateTime        @default(now()) @map("createdAt") @db.Timestamptz(0)
+
+  // Relations
+  createdTasks   Task[]          @relation("TeacherTasks")
+  submissions    Submission[]
+  passwordResets PasswordReset[]
+
+  @@map("users")
+}
+
+model Task {
+  id          BigInt       @id @default(autoincrement())
+  title       String       @db.Text
+  description String       @db.Text
+  createdAt   DateTime     @default(now()) @map("createdAt") @db.Timestamptz(0)
+  deadline    DateTime     @db.Timestamptz(0)
+  createdBy   BigInt
+
+  // Relations
+  teacher     User         @relation("TeacherTasks", fields: [createdBy], references: [id], onDelete: Cascade)
+  submissions Submission[]
+
+  @@map("tasks")
+}
+
+model Submission {
+  id        BigInt    @id @default(autoincrement())
+  userId    BigInt
+  taskId    BigInt
+  filePath  String    @db.Text
+  isTest    Boolean   @default(false)
+  grade     Int?      @db.SmallInt
+  feedback  String?   @db.Text
+  gradeAt   DateTime? @map("gradeAt") @db.Timestamptz(0)
+  createdAt DateTime  @default(now()) @map("createdAt") @db.Timestamptz(0)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  // One active (isTest = false) submission per student per task is enforced
+  // by a partial unique index created in a hand-written migration - Prisma
+  // can't express partial indexes. See prisma/PARTIAL_INDEX_NOTE.md.
+  @@index([taskId])
+  @@map("submissions")
+}
+
+model PasswordReset {
+  id        BigInt    @id @default(autoincrement())
+  userId    BigInt
+  tokenHash String    @db.VarChar(255)
+  expiresAt DateTime  @db.Timestamptz(0)
+  usedAt    DateTime? @db.Timestamptz(0)
+  createdAt DateTime  @default(now()) @db.Timestamptz(0)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_resets")
+}
