@@ -16,7 +16,7 @@ const GRADE_MESSAGE = 'Enter a whole number from 0 to 100.';
 
 const gradeSchema = z.object({
   grade: z
-    .number({ invalid_type_error: GRADE_MESSAGE, required_error: GRADE_MESSAGE })
+    .number({ error: GRADE_MESSAGE })
     .int(GRADE_MESSAGE)
     .min(0, GRADE_MESSAGE)
     .max(100, GRADE_MESSAGE),

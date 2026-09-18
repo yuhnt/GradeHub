@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { ZodSchema } from 'zod';
+import type { ZodType } from 'zod';
 
 /**
  * Validates req.body against a zod schema. On failure, responds 400 with
@@ -7,7 +7,7 @@ import { ZodSchema } from 'zod';
  * parsed (and type-coerced) value.
  * Usage: router.post('/register', validateBody(registerSchema), ...)
  */
-export function validateBody(schema: ZodSchema) {
+export function validateBody(schema: ZodType) {
   return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);
     if (!result.success) {

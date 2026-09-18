@@ -1,8 +1,11 @@
 import { z } from 'zod';
 
+// zod 4's default is "Invalid email address"; docs/api.md promises this text.
+const email = () => z.email('Invalid email');
+
 export const registerSchema = z.object({
   username: z.string().min(3).max(50),
-  email: z.string().email(),
+  email: email(),
   password: z.string().min(8).max(100),
   // Deliberately no "role" field: public registration always creates
   // a student account. If the client sends one, it's ignored by the
@@ -15,7 +18,7 @@ export const loginSchema = z.object({
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email(),
+  email: email(),
 });
 
 export const resetPasswordSchema = z.object({

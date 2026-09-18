@@ -43,6 +43,8 @@ which also publishes and deploys the Docker images.
 - The Prisma CLI is a production dependency so containers can apply
   migrations.
 - The API closes connections cleanly on `SIGTERM`/`SIGINT`.
+- zod 3 → 4 in both apps (validation library). Every API error message
+  stays the same.
 
 ### Security
 
