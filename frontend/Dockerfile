@@ -15,7 +15,7 @@ ARG VITE_API_URL=""
 ENV VITE_API_URL=${VITE_API_URL}
 RUN npm run build
 
-FROM nginx:1.30-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 # nginx renders templates/*.template into conf.d/ at start, filling in
 # ${API_UPSTREAM} and leaving nginx's own $variables alone.
 ENV API_UPSTREAM=http://backend:3000
