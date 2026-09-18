@@ -158,8 +158,3 @@ prisma/
 tests/            Jest + supertest integration tests (auth, task, submission, grade)
 ```
 
-## Known limitations
-
-- Uploads are checked by the client-declared MIME type only, not by
-  inspecting the file's bytes.
-- Password reset emails need SMTP settings (see Setup step 5). Without them, tokens are logged to the console.
