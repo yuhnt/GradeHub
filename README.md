@@ -82,8 +82,7 @@ cd frontend && npm run lint && npm run typecheck
 ```
 
 CI runs all of this, plus dependency audits and Docker builds, on every pull
-request. Merges to `main` deploy to staging; tags `vX.Y.Z` deploy to
-production. See [docs/deployment.md](docs/deployment.md).
+request. Merges to `main` deploy to staging;. See [docs/deployment.md](docs/deployment.md).
 
 ## Documentation
 

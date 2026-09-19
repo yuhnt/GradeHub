@@ -20,7 +20,7 @@ export const registerSchema = z
       .trim()
       .min(3, 'Use at least 3 characters.')
       .max(50, 'Use at most 50 characters.'),
-    email: z.string().trim().email('Enter a valid email address.'),
+    email: z.string().trim().pipe(z.email('Enter a valid email address.')),
     password,
     confirmPassword: z.string(),
   })
@@ -30,7 +30,7 @@ export const registerSchema = z
   });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().trim().email('Enter a valid email address.'),
+  email: z.string().trim().pipe(z.email('Enter a valid email address.')),
 });
 
 export const resetPasswordSchema = z
