@@ -5,7 +5,7 @@
 # Build from the frontend/ directory:
 #   docker build -t gradehub-frontend .
 
-FROM node:22-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
