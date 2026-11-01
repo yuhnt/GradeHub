@@ -1,6 +1,8 @@
-node_modules/
-dist/
-uploads/
-uploads-test/
+# Per-package ignores live in backend/.gitignore and frontend/.gitignore.
 .env
-.env.test
+node_modules/
+# Created when the API is started from the repository root by mistake.
+/uploads/
+.DS_Store
+Thumbs.db
+.claude/settings.local.json

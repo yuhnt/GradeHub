@@ -1,0 +1,8 @@
+# Normalise line endings in the repository; shell scripts and nginx config
+# must stay LF even on Windows checkouts or the containers can't run them.
+* text=auto
+*.sh text eol=lf
+*.conf text eol=lf
+*.template text eol=lf
+Dockerfile text eol=lf
+*.pdf binary

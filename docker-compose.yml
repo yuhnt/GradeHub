@@ -1,29 +1,67 @@
-version: '3.8'
+# The whole application: Postgres, the API and the web client behind nginx.
+# Used for production-like runs and on the server (see docs/deployment.md).
+#
+#   cp .env.example .env        # then fill in the secrets
+#   docker compose up -d --build     # build locally
+#   docker compose pull && docker compose up -d   # or run the CI-built images
+#
+# For day-to-day development use backend/docker-compose.yml (database only)
+# with `npm run dev` in backend/ and frontend/.
+
+name: gradehub
 
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: taskgrade_postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-    ports:
-      - "5433:5432"
+      POSTGRES_USER: ${DB_USER:-gradehub}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      POSTGRES_DB: ${DB_NAME:-gradehub}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: taskgrade_pgadmin
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/yuhnt/gradehub-backend}:${IMAGE_TAG:-latest}
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
-    ports:
-      - "5050:80"
+      # DB_PASSWORD is placed in a URL: use letters and digits only.
+      DATABASE_URL: postgresql://${DB_USER:-gradehub}:${DB_PASSWORD}@db:5432/${DB_NAME:-gradehub}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-10}
+      RESET_TOKEN_EXPIRY_MINUTES: ${RESET_TOKEN_EXPIRY_MINUTES:-30}
+      RESET_PASSWORD_URL: ${APP_URL:-http://localhost:8080}/reset-password
+      CORS_ORIGIN: ${APP_URL:-http://localhost:8080}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
     volumes:
-      - pgadmin:/root/.pgadmin
+      - uploads:/app/uploads
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/yuhnt/gradehub-frontend}:${IMAGE_TAG:-latest}
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_UPSTREAM: http://backend:3000
+    ports:
+      - '${HTTP_PORT:-8080}:80'
 
 volumes:
-  pgdata:
-  pgadmin:
+  db-data:
+  uploads:
